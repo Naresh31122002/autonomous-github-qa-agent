@@ -5,8 +5,73 @@ Fetches code from GitHub repositories and analyzes commits
 import os
 import tempfile
 import shutil
+import logging
 from github import Github, GithubException
 from typing import Dict, List, Optional
+
+logger = logging.getLogger("github_integration")
+
+
+def normalize_repo_input(repo_input: str) -> str:
+    """
+    Normalize GitHub repo input into owner/repo format.
+    Supports full GitHub URLs and owner/repo input.
+    """
+    raw = (repo_input or "").strip()
+    if not raw:
+        raise ValueError("Repository input is empty")
+
+    cleaned = raw.rstrip("/")
+    for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
+        if cleaned.lower().startswith(prefix):
+            cleaned = cleaned[len(prefix):]
+            break
+
+    if cleaned.endswith(".git"):
+        cleaned = cleaned[:-4]
+
+    parts = [part for part in cleaned.split("/") if part]
+    if len(parts) < 2:
+        raise ValueError("Repository must be in owner/repo format")
+
+    owner_repo = f"{parts[0]}/{parts[1]}"
+    if owner_repo.count("/") != 1:
+        raise ValueError("Repository must be in owner/repo format")
+
+    return owner_repo
+
+
+def _github_client(github_token: Optional[str] = None) -> Github:
+    return Github(github_token) if github_token else Github()
+
+
+def get_repository_metadata(repo_url: str, github_token: Optional[str] = None) -> Dict:
+    """
+    Validate the repository exists and return metadata.
+    """
+    try:
+        owner_repo = normalize_repo_input(repo_url)
+        logger.debug("Normalized repo: %s", owner_repo)
+        repo = _github_client(github_token).get_repo(owner_repo)
+        payload = {
+            "success": True,
+            "normalized_repo": owner_repo,
+            "repo_name": repo.full_name,
+            "default_branch": repo.default_branch,
+            "private": bool(repo.private),
+            "description": repo.description or "No description",
+        }
+        logger.debug("Repo exists: True")
+        logger.debug("Repo metadata response: %s", payload)
+        logger.debug("Default branch: %s", repo.default_branch)
+        return payload
+    except Exception as e:
+        logger.exception("Repository metadata lookup failed")
+        return {
+            "success": False,
+            "normalized_repo": "",
+            "error": f"Error loading repository metadata: {str(e)}",
+        }
 
 
 def fetch_repository(repo_url: str, github_token: Optional[str] = None) -> Dict:
@@ -21,15 +86,10 @@ def fetch_repository(repo_url: str, github_token: Optional[str] = None) -> Dict:
         Dictionary with repository info and file contents
     """
     try:
-        # Extract owner/repo from URL
-        if 'github.com' in repo_url:
-            parts = repo_url.rstrip('/').split('/')
-            owner_repo = f"{parts[-2]}/{parts[-1]}"
-        else:
-            owner_repo = repo_url
+        owner_repo = normalize_repo_input(repo_url)
             
         # Initialize GitHub client
-        g = Github(github_token) if github_token else Github()
+        g = _github_client(github_token)
         
         # Get repository
         repo = g.get_repo(owner_repo)
@@ -98,15 +158,10 @@ def fetch_commit_changes(repo_url: str, commit_sha: str, github_token: Optional[
         Dictionary with changed files and their contents
     """
     try:
-        # Extract owner/repo
-        if 'github.com' in repo_url:
-            parts = repo_url.rstrip('/').split('/')
-            owner_repo = f"{parts[-2]}/{parts[-1]}"
-        else:
-            owner_repo = repo_url
+        owner_repo = normalize_repo_input(repo_url)
             
         # Initialize GitHub client
-        g = Github(github_token) if github_token else Github()
+        g = _github_client(github_token)
         repo = g.get_repo(owner_repo)
         
         # Get commit
@@ -204,13 +259,9 @@ def post_review_comment(repo_url: str, commit_sha: str, comment: str, github_tok
         True if successful, False otherwise
     """
     try:
-        if 'github.com' in repo_url:
-            parts = repo_url.rstrip('/').split('/')
-            owner_repo = f"{parts[-2]}/{parts[-1]}"
-        else:
-            owner_repo = repo_url
+        owner_repo = normalize_repo_input(repo_url)
             
-        g = Github(github_token)
+        g = _github_client(github_token)
         repo = g.get_repo(owner_repo)
         commit = repo.get_commit(commit_sha)
         
@@ -224,80 +275,99 @@ def post_review_comment(repo_url: str, commit_sha: str, comment: str, github_tok
         return False
 
 
-def list_all_code_files(repo_url: str, github_token: str, file_extensions: Optional[List[str]] = None) -> Dict:
+def list_branches(repo_url: str, github_token: Optional[str] = None) -> Dict:
     """
-    List ALL code files in repository with metadata
-    
-    Args:
-        repo_url: GitHub repository URL
-        github_token: GitHub token (required)
-        file_extensions: List of extensions to include (default: common code files)
-        
-    Returns:
-        Dictionary with file list and metadata
+    List branches for a repository.
+    """
+    try:
+        owner_repo = normalize_repo_input(repo_url)
+
+        g = _github_client(github_token)
+        repo = g.get_repo(owner_repo)
+        branches = [branch.name for branch in repo.get_branches()]
+        logger.debug("Loaded branches: %s", branches)
+        return {
+            'success': True,
+            'normalized_repo': owner_repo,
+            'default_branch': repo.default_branch,
+            'branches': branches,
+        }
+    except Exception as e:
+        logger.exception("Branch listing failed")
+        return {
+            'success': False,
+            'error': f'Error listing branches: {str(e)}',
+            'branches': [],
+        }
+
+
+def list_all_code_files(
+    repo_url: str,
+    github_token: Optional[str] = None,
+    file_extensions: Optional[List[str]] = None,
+    branch: Optional[str] = None,
+) -> Dict:
+    """
+    List ALL code files in repository with metadata.
+
+    Uses the Git Tree API (recursive) for a single API call instead of
+    walking directories one-by-one with get_contents().
     """
     if file_extensions is None:
         file_extensions = ['.py', '.js', '.ts', '.java', '.md', '.cpp', '.c', '.go', '.rb', '.php', '.swift', '.kt']
-    
+
+    ext_set = set(file_extensions)
+
     try:
-        # Extract owner/repo
-        if 'github.com' in repo_url:
-            parts = repo_url.rstrip('/').split('/')
-            owner_repo = f"{parts[-2]}/{parts[-1]}"
-        else:
-            owner_repo = repo_url
-            
-        # Initialize GitHub client
-        g = Github(github_token)
+        owner_repo = normalize_repo_input(repo_url)
+
+        g = _github_client(github_token)
         repo = g.get_repo(owner_repo)
-        
-        # Get default branch
+
         default_branch = repo.default_branch
-        
-        # Get all files
-        contents_list = repo.get_contents("", ref=default_branch)
-        if not isinstance(contents_list, list):
-            contents_list = [contents_list]
-        
+        ref_branch = branch or default_branch
+
+        # Single API call: fetch entire tree recursively
+        branch_obj = repo.get_branch(ref_branch)
+        tree_sha = branch_obj.commit.sha
+        git_tree = repo.get_git_tree(tree_sha, recursive=True)
+
         files = []
-        
-        while contents_list:
-            file_content = contents_list.pop(0)
-            if file_content.type == "dir":
-                dir_contents = repo.get_contents(file_content.path, ref=default_branch)
-                if isinstance(dir_contents, list):
-                    contents_list.extend(dir_contents)
-                else:
-                    contents_list.append(dir_contents)
-            else:
-                # Check if file extension matches
-                ext = os.path.splitext(file_content.path)[1]
-                if ext in file_extensions:
-                    files.append({
-                        'path': file_content.path,
-                        'size': file_content.size,
-                        'type': 'file',
-                        'extension': ext,
-                        'sha': file_content.sha
-                    })
-        
-        return {
+        for element in git_tree.tree:
+            if element.type != "blob":
+                continue
+            ext = os.path.splitext(element.path)[1]
+            if ext in ext_set:
+                files.append({
+                    'path': element.path,
+                    'size': element.size or 0,
+                    'type': 'file',
+                    'extension': ext,
+                    'sha': element.sha,
+                })
+
+        payload = {
             'success': True,
+            'normalized_repo': owner_repo,
             'repo_name': repo.full_name,
             'default_branch': default_branch,
+            'branch': ref_branch,
             'files': files,
-            'file_count': len(files)
+            'file_count': len(files),
         }
-        
+        logger.debug('File tree loaded successfully via Git Tree API (%d files)', len(files))
+        return payload
+
     except Exception as e:
+        logger.exception("File tree load failed")
         return {
             'success': False,
             'error': f'Error listing files: {str(e)}',
-            'files': []
+            'files': [],
         }
 
 
-def get_changed_files_between_commits(repo_url: str, base_sha: str, head_sha: str, github_token: str) -> Dict:
+def get_changed_files_between_commits(repo_url: str, base_sha: str, head_sha: str, github_token: Optional[str] = None) -> Dict:
     """
     Get files changed between two commits
     
@@ -311,15 +381,10 @@ def get_changed_files_between_commits(repo_url: str, base_sha: str, head_sha: st
         Dictionary with changed files categorized by status
     """
     try:
-        # Extract owner/repo
-        if 'github.com' in repo_url:
-            parts = repo_url.rstrip('/').split('/')
-            owner_repo = f"{parts[-2]}/{parts[-1]}"
-        else:
-            owner_repo = repo_url
+        owner_repo = normalize_repo_input(repo_url)
             
         # Initialize GitHub client
-        g = Github(github_token)
+        g = _github_client(github_token)
         repo = g.get_repo(owner_repo)
         
         # Compare commits
@@ -366,7 +431,7 @@ def get_changed_files_between_commits(repo_url: str, base_sha: str, head_sha: st
         }
 
 
-def get_latest_commit_sha(repo_url: str, github_token: str) -> Dict:
+def get_latest_commit_sha(repo_url: str, github_token: Optional[str] = None, branch: Optional[str] = None) -> Dict:
     """
     Get latest commit SHA from default branch
     
@@ -378,24 +443,21 @@ def get_latest_commit_sha(repo_url: str, github_token: str) -> Dict:
         Dictionary with commit information
     """
     try:
-        # Extract owner/repo
-        if 'github.com' in repo_url:
-            parts = repo_url.rstrip('/').split('/')
-            owner_repo = f"{parts[-2]}/{parts[-1]}"
-        else:
-            owner_repo = repo_url
+        owner_repo = normalize_repo_input(repo_url)
             
         # Initialize GitHub client
-        g = Github(github_token)
+        g = _github_client(github_token)
         repo = g.get_repo(owner_repo)
         
-        # Get latest commit from default branch
-        branch = repo.get_branch(repo.default_branch)
-        commit = branch.commit
+        # Get latest commit from selected branch
+        branch_name = branch or repo.default_branch
+        branch_obj = repo.get_branch(branch_name)
+        commit = branch_obj.commit
         
         return {
             'success': True,
             'sha': commit.sha,
+            'branch': branch_name,
             'message': commit.commit.message,
             'author': commit.commit.author.name,
             'date': commit.commit.author.date.isoformat(),
@@ -409,7 +471,7 @@ def get_latest_commit_sha(repo_url: str, github_token: str) -> Dict:
         }
 
 
-def fetch_file_content(repo_url: str, file_path: str, commit_sha: str, github_token: str) -> Dict:
+def fetch_file_content(repo_url: str, file_path: str, commit_sha: str, github_token: Optional[str] = None) -> Dict:
     """
     Fetch specific file content at specific commit
     
@@ -423,15 +485,10 @@ def fetch_file_content(repo_url: str, file_path: str, commit_sha: str, github_to
         Dictionary with file content
     """
     try:
-        # Extract owner/repo
-        if 'github.com' in repo_url:
-            parts = repo_url.rstrip('/').split('/')
-            owner_repo = f"{parts[-2]}/{parts[-1]}"
-        else:
-            owner_repo = repo_url
+        owner_repo = normalize_repo_input(repo_url)
             
         # Initialize GitHub client
-        g = Github(github_token)
+        g = _github_client(github_token)
         repo = g.get_repo(owner_repo)
         
         # Get file content at specific commit
@@ -465,7 +522,9 @@ TOOL_METADATA = {
     "functions": {
         "fetch_repository": "Fetch all code files from a GitHub repository",
         "fetch_commit_changes": "Fetch files changed in a specific commit",
+        "get_repository_metadata": "Validate repo and fetch metadata",
         "list_all_code_files": "List all code files with metadata",
+        "list_branches": "List repository branches",
         "get_changed_files_between_commits": "Get files changed between two commits",
         "get_latest_commit_sha": "Get latest commit SHA and info",
         "fetch_file_content": "Fetch specific file content at commit",

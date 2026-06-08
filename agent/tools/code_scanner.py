@@ -13,7 +13,7 @@ import os
 import json
 
 
-def run(repo_path, client, model):
+def run(repo_path, client, model, rag_context=""):
     """Scan code repository for quality issues."""
     
     # Collect all Python files recursively
@@ -79,15 +79,20 @@ def run(repo_path, client, model):
             files_text = f"FILE: {batch[0]['filename']}\n```python\n{file_content[:2000]}\n... (file truncated for analysis)\n```"
             print(f"[DEBUG] File {batch[0]['filename']} truncated from {len(file_content)} to 2000 chars")
         
+        context_section = f"\nRAG CONTEXT FROM SIMILAR REPOSITORY PATTERNS:\n{rag_context[:2500]}\n" if rag_context else ""
+
         prompt = f"""Analyze this Python file for issues. Find AT LEAST 2-3 issues per file.
 
 {files_text}
+{context_section}
 
 Check for:
 1. Security: hardcoded credentials, SQL injection, eval(), sensitive data in logs
 2. Error handling: missing try-except for file I/O, network, database ops
 3. Code quality: missing docstrings, type hints, magic numbers, long functions
 4. Best practices: naming, comments, duplication, unused imports
+
+Use the RAG context to recognize repeated bug patterns and contextual fixes, but report only issues that are grounded in the current file.
 
 Return ONLY JSON:
 {{

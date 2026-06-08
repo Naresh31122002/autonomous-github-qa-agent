@@ -4,8 +4,8 @@ Code Embeddings Module
 Handles code chunking and embedding generation for RAG.
 """
 
-import re
 from typing import List, Dict
+import hashlib
 import numpy as np
 
 
@@ -117,14 +117,7 @@ class CodeEmbedder:
             embeddings = self.model.encode(texts, show_progress_bar=False)
             return np.array(embeddings)
         else:
-            # Dummy embeddings for demo (random vectors)
-            # In production, this would use a real model
-            n_chunks = len(chunks)
-            embeddings = np.random.randn(n_chunks, self.dimension).astype('float32')
-            # Normalize for cosine similarity
-            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-            embeddings = embeddings / (norms + 1e-8)
-            return embeddings
+            return np.array([self._hash_embedding(chunk['text']) for chunk in chunks])
     
     def embed_query(self, query: str) -> np.ndarray:
         """
@@ -140,10 +133,24 @@ class CodeEmbedder:
             embedding = self.model.encode([query], show_progress_bar=False)
             return np.array(embedding)
         else:
-            # Dummy embedding for demo
-            embedding = np.random.randn(1, self.dimension).astype('float32')
-            norm = np.linalg.norm(embedding)
-            return embedding / (norm + 1e-8)
+            return np.array([self._hash_embedding(query)])
+
+    def _hash_embedding(self, text: str) -> np.ndarray:
+        """Create a deterministic lexical embedding when model loading is unavailable."""
+        vector = np.zeros(self.dimension, dtype='float32')
+        tokens = [
+            token.lower()
+            for token in text.replace("_", " ").split()
+            if token.strip()
+        ]
+        for token in tokens:
+            digest = hashlib.sha256(token.encode('utf-8')).digest()
+            idx = int.from_bytes(digest[:4], 'big') % self.dimension
+            vector[idx] += 1.0
+        norm = np.linalg.norm(vector)
+        if norm == 0:
+            return vector
+        return vector / norm
     
     def process_repository(self, python_files: List[Dict]) -> tuple:
         """

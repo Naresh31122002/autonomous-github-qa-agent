@@ -64,7 +64,7 @@ from agent import planner, executor, reviewer
 MAX_LOOPS = 3
 
 
-def run(repo_path, client, model, on_step, on_log):
+def run(repo_path, client, model, on_step=None, on_log=None, max_loops=MAX_LOOPS):
     """
     Run the 5-step autonomous agent loop.
 
@@ -87,6 +87,11 @@ def run(repo_path, client, model, on_step, on_log):
     # "risks are too generic"). This feedback is passed to the
     # planner on the next loop so the agent knows WHAT to improve.
     # This is the "memory" of the self-correction cycle.
+    if on_step is None:
+        on_step = lambda step, status: None
+    if on_log is None:
+        on_log = print
+
     feedback = ""
 
     # final_results: always holds the latest tool outputs. Even if
@@ -97,8 +102,8 @@ def run(repo_path, client, model, on_step, on_log):
     # ── THE AUTONOMY LOOP ────────────────────────────────────────
     # This for-loop IS the autonomy. Without it, you have a pipeline.
     # With it, you have an agent that can retry and improve.
-    for loop_num in range(1, MAX_LOOPS + 1):
-        on_log(f"═══ Loop {loop_num} of {MAX_LOOPS} ═══")
+    for loop_num in range(1, max_loops + 1):
+        on_log(f"═══ Loop {loop_num} of {max_loops} ═══")
 
         # ── STEP 1: THINK ──────────────────────────────────────────
         # What: The agent acknowledges the goal and any feedback.
@@ -217,5 +222,5 @@ def run(repo_path, client, model, on_step, on_log):
     # Why we still return results: even if the agent couldn't reach
     # the quality threshold after all retries, the best attempt is
     # still useful. In production, you might escalate to a human here.
-    on_log(f"Max loops ({MAX_LOOPS}) reached — delivering best attempt")
+    on_log(f"Max loops ({max_loops}) reached — delivering best attempt")
     return final_results

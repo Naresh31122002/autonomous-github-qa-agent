@@ -1,4 +1,5 @@
 streamlit
+streamlit-autorefresh
 groq
 python-dotenv
 PyGithub
@@ -6,6 +7,7 @@ fastapi
 uvicorn
 python-multipart
 aiofiles
+requests
 
 # RAG Dependencies (Optional - for enhanced code analysis)
 faiss-cpu

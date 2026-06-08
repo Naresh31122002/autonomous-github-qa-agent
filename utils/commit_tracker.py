@@ -19,7 +19,7 @@ class CommitTracker:
         """Load data from storage file"""
         if os.path.exists(self.storage_file):
             try:
-                with open(self.storage_file, 'r') as f:
+                with open(self.storage_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except json.JSONDecodeError:
                 return {'repositories': {}}
@@ -27,8 +27,8 @@ class CommitTracker:
     
     def _save(self):
         """Save data to storage file"""
-        with open(self.storage_file, 'w') as f:
-            json.dump(self.data, f, indent=2)
+        with open(self.storage_file, 'w', encoding='utf-8') as f:
+            json.dump(self.data, f, indent=2, ensure_ascii=False)
     
     def _normalize_repo_url(self, repo_url: str) -> str:
         """Normalize repo URL to owner/repo format"""

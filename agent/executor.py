@@ -31,6 +31,66 @@ MAX_RETRIES = 2
 RETRY_DELAY = 2
 
 
+def _collect_python_files(repo_path):
+    """Collect Python files for optional RAG indexing."""
+    python_files = []
+    for root, dirs, files in os.walk(repo_path):
+        dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', 'node_modules', '.venv', 'venv', '.rag_vector_db']]
+        for filename in files:
+            if filename.endswith('.py') and filename != '__init__.py':
+                filepath = os.path.join(root, filename)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        python_files.append({
+                            "filename": os.path.relpath(filepath, repo_path),
+                            "content": f.read(),
+                        })
+                except Exception:
+                    continue
+    return python_files
+
+
+def _build_rag_context(repo_path, on_log):
+    """Build repository context with RAG when optional dependencies are available."""
+    try:
+        from rag import RAGRetriever
+
+        python_files = _collect_python_files(repo_path)
+        if not python_files:
+            return ""
+
+        store_path = os.path.join(repo_path, ".rag_vector_db")
+        rag = RAGRetriever(store_path=store_path)
+        rag.clear_index()
+        rag.index_repository(python_files)
+
+        queries = [
+            "security vulnerabilities hardcoded credentials sql injection",
+            "missing error handling risky code paths",
+            "test coverage gaps edge cases",
+        ]
+        seen = set()
+        context_parts = ["## Retrieved Repository Context"]
+        for query in queries:
+            for result in rag.retrieve_context(query, k=2):
+                key = (result.get("filename"), result.get("chunk_id"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                context_parts.append(
+                    f"\n### {result.get('filename')} lines {result.get('start_line')}-{result.get('end_line')}\n"
+                    f"```python\n{result.get('text', '')[:1000]}\n```"
+                )
+
+        if len(context_parts) == 1:
+            return ""
+        on_log(f"RAG context built from {len(python_files)} Python file(s)")
+        return "\n".join(context_parts)
+    except Exception as e:
+        on_log(f"RAG context unavailable: {e}")
+        return ""
+
+
 def _run_with_retry(fn, tool_name, on_log):
     """Run a tool function with retry logic for transient API errors."""
     last_error = None
@@ -52,6 +112,7 @@ def run_plan(plan, repo_path, client, model, on_log):
     """Execute each step in the plan by routing to the correct tool."""
 
     results = {}
+    rag_context = _build_rag_context(repo_path, on_log)
     
     on_log(f"[DEBUG] Repository path: {repo_path}")
     on_log(f"[DEBUG] Checking if path exists: {os.path.exists(repo_path)}")
@@ -67,14 +128,14 @@ def run_plan(plan, repo_path, client, model, on_log):
         # ── ROUTE TO THE CORRECT TOOL ────────────────────────────────
         if tool == "code_scanner":
             results["code_scanner"] = _run_with_retry(
-                lambda: code_scanner.run(repo_path, client, model),
+                lambda: code_scanner.run(repo_path, client, model, rag_context=rag_context),
                 tool, on_log,
             )
 
         elif tool == "test_case_generator":
             scanner_output = results.get("code_scanner", "")
             results["test_case_generator"] = _run_with_retry(
-                lambda: test_case_generator.run(repo_path, scanner_output, client, model),
+                lambda: test_case_generator.run(repo_path, scanner_output, client, model, rag_context=rag_context),
                 tool, on_log,
             )
 
@@ -91,7 +152,7 @@ def run_plan(plan, repo_path, client, model, on_log):
             test_output = results.get("test_case_generator", "")
             priority_output = results.get("issue_prioritizer", "")
             results["report_writer"] = _run_with_retry(
-                lambda: report_writer.run(scanner_output, test_output, priority_output, client, model),
+                lambda: report_writer.run(scanner_output, test_output, priority_output, client, model, rag_context=rag_context),
                 tool, on_log,
             )
 

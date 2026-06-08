@@ -18,6 +18,27 @@
         "agents/earth_agent.py"
       ],
       "analysis_count": 9
+    },
+    "Naresh31122002/quant-ml-trader": {
+      "last_analyzed_commit": "87922e3bc0827c15c033cd74f79b0a1fc69d37f7",
+      "last_analyzed_date": "2026-06-06T16:48:05.995455",
+      "analyzed_files": [
+        "README.md",
+        "src/dashboard_streamlit.py",
+        "src/data_loader.py",
+        "src/feature_engineering.py",
+        "src/model_development_and_backtesting.py",
+        "src/portfolio_optimizer.py"
+      ],
+      "analysis_count": 1
+    },
+    "Naresh31122002/mini-expenses": {
+      "last_analyzed_commit": "ceb48b052ded47e293793e8d8fc937e833c165fe",
+      "last_analyzed_date": "2026-06-08T13:33:08.568801",
+      "analyzed_files": [
+        "app.py"
+      ],
+      "analysis_count": 11
     }
   }
 }

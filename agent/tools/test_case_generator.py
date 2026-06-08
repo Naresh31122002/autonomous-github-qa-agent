@@ -12,7 +12,7 @@ import os
 import json
 
 
-def run(repo_path, scanner_output, client, model):
+def run(repo_path, scanner_output, client, model, rag_context=""):
     """Generate pytest test cases for untested functions."""
     
     # Parse scanner output
@@ -81,6 +81,9 @@ EXISTING TESTS:
 
 TOP ISSUES FOUND:
 {issues_text}
+
+RAG CONTEXT:
+{rag_context[:1500] if rag_context else "No retrieved context available."}
 
 Generate pytest test cases for the MOST CRITICAL untested functions. Focus on:
 1. Functions without any tests

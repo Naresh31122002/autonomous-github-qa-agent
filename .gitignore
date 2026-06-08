@@ -9,6 +9,11 @@ __pycache__/
 # Streamlit secrets
 .streamlit/secrets.toml
 
+# Generated analysis artifacts
+reports/
+rag/vector_db/
+**/.rag_vector_db/
+
 # IDE
 .vscode/
 .idea/
@@ -16,3 +21,4 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+.env 

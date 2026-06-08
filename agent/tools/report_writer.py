@@ -12,7 +12,7 @@
 import json
 
 
-def run(scanner_output, test_output, priority_output, client, model):
+def run(scanner_output, test_output, priority_output, client, model, rag_context=""):
     """Compile comprehensive code quality report."""
     
     # Parse inputs
@@ -56,6 +56,9 @@ GENERATED TEST CASES:
 
 RECOMMENDATIONS:
 {json.dumps(recommendations, indent=2)}
+
+RAG CONTEXT USED:
+{rag_context[:1200] if rag_context else "No retrieved context available."}
 
 Create a comprehensive markdown report with these sections:
 

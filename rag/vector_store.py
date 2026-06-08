@@ -99,7 +99,7 @@ class VectorStore:
         # Retrieve metadata for results
         results = []
         for i, idx in enumerate(indices[0]):
-            if idx < len(self.metadata):
+            if 0 <= idx < len(self.metadata):
                 result = self.metadata[idx].copy()
                 result['distance'] = float(distances[0][i])
                 results.append(result)

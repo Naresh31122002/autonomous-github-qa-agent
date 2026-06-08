@@ -38,27 +38,82 @@ An autonomous AI agent that analyzes code repositories, detects bugs, generates 
 
 ### Prerequisites
 - Python 3.10+
-- Groq API key (free, no credit card) → [console.groq.com](https://console.groq.com)
+- Groq API Key (free, no credit card) → [console.groq.com](https://console.groq.com)
+- GitHub Personal Access Token (for branch & file fetching)
 
-### Installation
+### Installation & Environment Setup
 
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/Naresh31122002/autonomous-github-qa-agent.git
+   cd autonomous-github-qa-agent
+   ```
+
+2. **Create and Activate a Virtual Environment:**
+   * **Windows (PowerShell):**
+     ```powershell
+     python -m venv .venv
+     .venv\Scripts\Activate.ps1
+     ```
+   * **Windows (CMD):**
+     ```cmd
+     python -m venv .venv
+     .venv\Scripts\activate.bat
+     ```
+   * **macOS / Linux:**
+     ```bash
+     python3 -m venv .venv
+     source .venv/bin/activate
+     ```
+
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Set up environment variables:**
+   ```bash
+   cp .env.example .env
+   ```
+   Edit `.env` and fill in your keys:
+   * `GROQ_API_KEY`: Your Groq API Key
+   * `GITHUB_TOKEN`: Your GitHub Personal Access Token
+   * `WEBHOOK_SECRET`: Optional secret for verifying push events
+   * `JIRA_API_TOKEN` / `JIRA_EMAIL` / `JIRA_BASE_URL` (optional, for ticket creation)
+
+---
+
+### 💻 Running the Application
+
+For a fully automated setup, run each of the following in separate terminals:
+
+#### 1. Streamlit Dashboard (UI)
+Ensure your virtual environment is active, then run:
 ```bash
-# Clone the repository
-git clone https://github.com/studaiedutech-ui/studai-foundry-launchpad.git
-cd studai-foundry-launchpad
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set up API key
-cp .env.example .env
-# Edit .env and add your Groq API key
-
-# Run the app
 streamlit run main.py
 ```
+*Frontend opens at: **http://localhost:8501***
 
-The app opens at **http://localhost:8501**
+#### 2. Webhook Server (Backend)
+Ensures real-time push events are handled automatically:
+```bash
+python webhook_server.py
+```
+*Backend server runs on port **8000**.*
+
+#### 3. Ngrok Tunnel (Expose Webhook Server)
+Expose the backend port 8000 to the public internet so GitHub can deliver webhooks:
+* **Using the pre-packaged Windows binary**:
+  ```powershell
+  & ".\ngrok-v3-stable-windows-amd64 (1)\ngrok.exe" http 8000
+  ```
+* **If ngrok is installed globally on your machine**:
+  ```bash
+  ngrok http 8000
+  ```
+*Copy the forwarding URL (e.g., `https://xxxx.ngrok-free.app`) and configure it under your GitHub repository Webhook settings as `https://xxxx.ngrok-free.app/webhook/github`.*
+
+---
 
 ---
 
@@ -293,10 +348,10 @@ streamlit run main.py
 - [x] Streamlit UI
 
 ### Post-MVP Enhancements 🔄
-- [ ] RAG + FAISS for code similarity search
-- [ ] GitHub API for real repository monitoring
-- [ ] Jira API for automatic ticket creation
-- [ ] FastAPI backend for webhook support
+- [x] RAG + FAISS for code similarity search
+- [x] GitHub API for real repository monitoring (Branches & File-level monitoring scope)
+- [x] Jira API for automatic ticket creation
+- [x] FastAPI backend for webhook support
 - [ ] React dashboard for production UI
 
 ---
